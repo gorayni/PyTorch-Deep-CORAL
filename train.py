@@ -1,5 +1,7 @@
 from torchvision.models import alexnet
 from torchvision.models import resnet50
+from models import FrozenCNN
+from data_loader import FeaturesDataset
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -113,27 +115,43 @@ def main():
     else:
         args.device = torch.device('cpu')
 
-    if args.source == 'ub':
-        source_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/ub/static/01/train'
+    if args.backbone_network == 'alexnet' or args.backbone_network == 'resnet50':
+        if args.source == 'ub':
+            source_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/ub/static/01/train'
+        else:
+            source_data_dir = None
+
+        if args.target == 'thomaz':
+            target_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/thomaz/static/01/train'
+        else:
+            target_data_dir = None
+
+        source_train_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=True,
+                                         data_dir=source_data_dir)
+        target_train_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=True,
+                                         data_dir=target_data_dir)
+
+        source_evaluate_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=False,
+                                            data_dir=source_data_dir)
+        target_evaluate_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=False,
+                                            data_dir=target_data_dir)
+
+        n_classes = len(source_train_loader.dataset.classes)
     else:
-        source_data_dir = None
+        source_train_dataset = FeaturesDataset(split_fpath='/home/alejandro/ub/journal_2019/split/domain_adaptation/ub/static/01/cached_fold-01_train.npz')
+        target_train_dataset = FeaturesDataset(split_fpath='/home/alejandro/ub/journal_2019/split/domain_adaptation/thomaz/static/01/cached_fold-01_train.npz')
 
-    if args.target == 'thomaz':
-        target_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/thomaz/static/01/train'
-    else:
-        target_data_dir = None
+        source_train_loader = torch.utils.data.DataLoader(source_train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+        target_train_loader = torch.utils.data.DataLoader(target_train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
-    source_train_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=True,
-                                     data_dir=source_data_dir)
-    target_train_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=True,
-                                     data_dir=target_data_dir)
+        source_evaluate_dataset = FeaturesDataset(split_fpath='/home/alejandro/ub/journal_2019/split/domain_adaptation/ub/static/01/cached_fold-01_train.npz')
+        target_evaluate_dataset = FeaturesDataset(split_fpath='/home/alejandro/ub/journal_2019/split/domain_adaptation/thomaz/static/01/cached_fold-01_train.npz')
 
-    source_evaluate_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=False,
-                                        data_dir=source_data_dir)
-    target_evaluate_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=False,
-                                        data_dir=target_data_dir)
-
-    n_classes = len(source_train_loader.dataset.classes)
+        source_evaluate_loader = torch.utils.data.DataLoader(source_evaluate_dataset, batch_size=args.batch_size,
+                                                             shuffle=False, num_workers=4)
+        target_evaluate_loader = torch.utils.data.DataLoader(target_evaluate_dataset, batch_size=args.batch_size,
+                                                             shuffle=False, num_workers=4)
+        n_classes = 17
 
     # ~ Paper : "We initialized the other layers with the parameters pre-trained on ImageNet"
     # check https://github.com/pytorch/vision/blob/master/torchvision/models/alexnet.py
@@ -157,7 +175,8 @@ def main():
             {'params': model.classifier[:6].parameters()},
             {'params': model.classifier[6].parameters(), 'lr': 10 * args.lr}
         ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
-    else:
+
+    elif args.backbone_network == 'resnet50':
         model = resnet50(pretrained=True)
 
         # ~ Paper : The dimension of last fully connected layer (fc8) was set to the number of categories (31)
@@ -176,6 +195,24 @@ def main():
             {'params': model.layer4.parameters()},
             {'params': model.fc.parameters(), 'lr': 10 * args.lr}
         ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
+    else:
+        model = FrozenCNN()
+
+        # ~ Paper : The dimension of last fully connected layer (fc8) was set to the number of categories (31)
+        model.classifier[0] = nn.Linear(2048, n_classes)
+
+        # ~ Paper : and initialized with N(0, 0.005)
+        torch.nn.init.normal_(model.classifier[0].weight, mean=0, std=5e-3)
+
+        # Initialize bias to small constant number (http://cs231n.github.io/neural-networks-2/#init)
+        model.classifier[0].bias.data.fill_(0.01)
+
+        model = model.to(device=args.device)
+
+        # ~ Paper : "The learning rate of fc8 is set to 10 times the other layers as it was training from scratch."
+        optimizer = torch.optim.SGD([
+            {'params': model.classifier[0].parameters(), 'lr': 10 * args.lr}
+        ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
 
     tracker = Tracker()
 
@@ -185,7 +222,8 @@ def main():
         evaluate(model, target_evaluate_loader, 'target', tracker, args, i)
 
     # Save logged classification loss, coral loss, source accuracy, target accuracy
-    log_file="{}_coral-loss:{}_{}-{}_log.pth".format(args.backbone_network, args.lambda_coral, args.source, args.target)
+    log_file = "{}_coral-loss:{}_{}-{}_log.pth".format(args.backbone_network, args.lambda_coral, args.source,
+                                                       args.target)
     torch.save(tracker.to_dict(), log_file)
 
 

@@ -1,5 +1,7 @@
 import torch
 from torchvision import transforms, datasets
+import torch.utils.data as data
+import numpy as np
 
 
 def get_loader(name_dataset, batch_size, train=True, data_dir=None):
@@ -50,3 +52,23 @@ def get_loader(name_dataset, batch_size, train=True, data_dir=None):
                                                  num_workers=4)
     return dataset_loader
 
+
+class FeaturesDataset(data.Dataset):
+    """Face Landmarks dataset."""
+
+    def __init__(self, split_fpath):
+        """
+        Args:
+            split_fpath (string): Path to the npz file with annotations.
+        """
+
+        split = np.load(split_fpath)
+        self.features = split['features']
+        self.labels = np.asarray(split['labels'])
+        self.img_paths = np.asarray(split['img_paths'])
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx], self.img_paths[idx]
