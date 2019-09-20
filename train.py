@@ -1,4 +1,5 @@
 from torchvision.models import alexnet
+from torchvision.models import resnet50
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -86,6 +87,8 @@ def main():
                         help='Disable CUDA')
     parser.add_argument('--epochs', type=int, default=50,
                         help='Number of total epochs to run')
+    parser.add_argument('--backbone_network', type=str, default='alexnet',
+                        help='Backbone CNN')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch size')
     parser.add_argument('--lr', default=1e-3,
@@ -120,24 +123,45 @@ def main():
 
     # ~ Paper : "We initialized the other layers with the parameters pre-trained on ImageNet"
     # check https://github.com/pytorch/vision/blob/master/torchvision/models/alexnet.py
-    model = alexnet(pretrained=True)
-    # ~ Paper : The dimension of last fully connected layer (fc8) was set to the number of categories (31)
-    model.classifier[6] = nn.Linear(4096, n_classes)
-    # ~ Paper : and initialized with N(0, 0.005)
-    torch.nn.init.normal_(model.classifier[6].weight, mean=0, std=5e-3)
+    if args.backbone_network == 'alexnet':
+        model = alexnet(pretrained=True)
 
-    # Initialize bias to small constant number (http://cs231n.github.io/neural-networks-2/#init)
-    model.classifier[6].bias.data.fill_(0.01)
+        # ~ Paper : The dimension of last fully connected layer (fc8) was set to the number of categories (31)
+        model.classifier[6] = nn.Linear(4096, n_classes)
 
-    model = model.to(device=args.device)
+        # ~ Paper : and initialized with N(0, 0.005)
+        torch.nn.init.normal_(model.classifier[6].weight, mean=0, std=5e-3)
 
-    # ~ Paper : "The learning rate of fc8 is set to 10 times the other layers as it was training from scratch."
-    optimizer = torch.optim.SGD([
-        {'params':  model.features.parameters()},
-        {'params': model.classifier[:6].parameters()},
-        # fc8 -> 7th element (index 6) in the Sequential block
-        {'params': model.classifier[6].parameters(), 'lr': 10 * args.lr}
-    ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
+        # Initialize bias to small constant number (http://cs231n.github.io/neural-networks-2/#init)
+        model.classifier[6].bias.data.fill_(0.01)
+
+        model = model.to(device=args.device)
+
+        # ~ Paper : "The learning rate of fc8 is set to 10 times the other layers as it was training from scratch."
+        optimizer = torch.optim.SGD([
+            {'params': model.features.parameters()},
+            {'params': model.classifier[:6].parameters()},
+            {'params': model.classifier[6].parameters(), 'lr': 10 * args.lr}
+        ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
+    else:
+        model = resnet50(pretrained=True)
+
+        # ~ Paper : The dimension of last fully connected layer (fc8) was set to the number of categories (31)
+        model.fc = nn.Linear(2048, n_classes)
+
+        # ~ Paper : and initialized with N(0, 0.005)
+        torch.nn.init.normal_(model.fc.weight, mean=0, std=5e-3)
+
+        # Initialize bias to small constant number (http://cs231n.github.io/neural-networks-2/#init)
+        model.fc.bias.data.fill_(0.01)
+
+        model = model.to(device=args.device)
+
+        # ~ Paper : "The learning rate of fc8 is set to 10 times the other layers as it was training from scratch."
+        optimizer = torch.optim.SGD([
+            {'params': model.layer4.parameters()},
+            {'params': model.fc.parameters(), 'lr': 10 * args.lr}
+        ], lr=args.lr, momentum=args.momentum)  # if not specified, the default lr is used
 
     tracker = Tracker()
 
