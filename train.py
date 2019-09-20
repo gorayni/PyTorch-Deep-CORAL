@@ -113,11 +113,25 @@ def main():
     else:
         args.device = torch.device('cpu')
 
-    source_train_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=True)
-    target_train_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=True)
+    if args.source == 'ub':
+        source_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/ub/static/01/train'
+    else:
+        source_data_dir = None
 
-    source_evaluate_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=False)
-    target_evaluate_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=False)
+    if args.target == 'thomaz':
+        target_data_dir = '/home/alejandro/ub/journal_2019/split/domain_adaptation/thomaz/static/01/train'
+    else:
+        target_data_dir = None
+
+    source_train_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=True,
+                                     data_dir=source_data_dir)
+    target_train_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=True,
+                                     data_dir=target_data_dir)
+
+    source_evaluate_loader = get_loader(name_dataset=args.source, batch_size=args.batch_size, train=False,
+                                        data_dir=source_data_dir)
+    target_evaluate_loader = get_loader(name_dataset=args.target, batch_size=args.batch_size, train=False,
+                                        data_dir=target_data_dir)
 
     n_classes = len(source_train_loader.dataset.classes)
 
