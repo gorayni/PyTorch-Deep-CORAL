@@ -185,7 +185,8 @@ def main():
         evaluate(model, target_evaluate_loader, 'target', tracker, args, i)
 
     # Save logged classification loss, coral loss, source accuracy, target accuracy
-    torch.save(tracker.to_dict(), "log.pth")
+    log_file="{}_coral-loss:{}_{}-{}_log.pth".format(args.backbone_network, args.lambda_coral, args.source, args.target)
+    torch.save(tracker.to_dict(), log_file)
 
 
 if __name__ == '__main__':
